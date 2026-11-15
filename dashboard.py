@@ -186,13 +186,35 @@ def get_history():
     for sc, p in posts.items():
         records.append({
             "shortcode": sc,
+            "status": p.get("status", "sent"),
             "caption": p.get("caption", ""),
-            "sent_at": p.get("sent_at", ""),
+            "sent_at": p.get("sent_at") or p.get("skipped_at", ""),
             "post_date_utc": p.get("post_date_utc", ""),
             "instagram_url": p.get("instagram_url", f"https://www.instagram.com/p/{sc}/")
         })
     records.sort(key=lambda x: x.get("sent_at", ""), reverse=True)
     return jsonify({"history": records})
+
+
+@app.route("/api/queue/skip", methods=["POST"])
+def skip_queue_post():
+    data = request.json or {}
+    shortcode = data.get("shortcode")
+    if not shortcode:
+        return jsonify({"error": "Missing shortcode"}), 400
+
+    history = load_history()
+    history.setdefault("posts", {})[shortcode] = {
+        "skipped_at": datetime.now(timezone.utc).isoformat(),
+        "status": "skipped",
+        "caption": "(Skipped by User)",
+        "instagram_url": f"https://www.instagram.com/p/{shortcode}/"
+    }
+    from main import save_history
+    save_history(history)
+    # Clear cache so next photo updates immediately
+    queue_cache["last_fetched"] = 0
+    return jsonify({"success": True, "shortcode": shortcode})
 
 
 @app.route("/api/caption/override", methods=["POST"])
@@ -494,16 +516,20 @@ DASHBOARD_HTML = """
             </div>
           </div>
 
-          <!-- Big Action Button: Send Now -->
-          <div class="pt-2">
-            <button onclick="openSendModal()" class="w-full py-4 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white font-bold text-base shadow-xl shadow-rose-900/40 hover:shadow-rose-900/60 transition transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
+          <!-- Big Action Button: Send Now + Skip Button -->
+          <div class="pt-2 flex flex-col sm:flex-row gap-3">
+            <button onclick="openSendModal()" class="flex-1 py-4 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white font-bold text-base shadow-xl shadow-rose-900/40 hover:shadow-rose-900/60 transition transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
               <i data-lucide="send" class="w-5 h-5"></i>
-              <span>Send Today's Photo Now (Review & Dispatch)</span>
+              <span>Send Today's Photo Now</span>
             </button>
-            <p class="text-center text-xs text-slate-400 mt-2">
-              🔒 Safety Protected: No email is ever sent without your explicit click on the confirmation modal.
-            </p>
+            <button onclick="skipCurrentPhoto()" class="px-5 py-4 rounded-2xl bg-slate-800 hover:bg-slate-750 hover:border-amber-600/50 text-amber-300 font-bold text-sm border border-slate-700 transition flex items-center justify-center gap-2 shrink-0 shadow-lg">
+              <i data-lucide="skip-forward" class="w-4 h-4 text-amber-400"></i>
+              <span>Skip This Photo</span>
+            </button>
           </div>
+          <p class="text-center text-xs text-slate-400 mt-2">
+            🔒 Safety Protected: No email is ever sent without your explicit click on the confirmation modal.
+          </p>
 
         </div>
       </div>
@@ -718,9 +744,14 @@ DASHBOARD_HTML = """
                   <p class="font-mono text-slate-300 font-semibold truncate">${item.shortcode}</p>
                   <p class="text-[10px] text-slate-400 mt-0.5">${item.date_utc}</p>
                 </div>
-                <a href="${item.instagram_url}" target="_blank" class="mt-2 text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-1">
-                  <i data-lucide="external-link" class="w-3 h-3"></i> IG Post
-                </a>
+                <div class="mt-2 flex items-center justify-between">
+                  <a href="${item.instagram_url}" target="_blank" class="text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-1">
+                    <i data-lucide="external-link" class="w-3 h-3"></i> Post
+                  </a>
+                  <button onclick="skipShortcode('${item.shortcode}')" class="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-amber-950 text-slate-400 hover:text-amber-300 border border-slate-700 flex items-center gap-1 transition">
+                    <i data-lucide="skip-forward" class="w-2.5 h-2.5"></i> Skip
+                  </button>
+                </div>
               </div>
             `;
             grid.appendChild(card);
@@ -839,18 +870,21 @@ DASHBOARD_HTML = """
         }
 
         records.forEach(r => {
+          const isSkipped = r.status === 'skipped';
           const card = document.createElement('div');
           card.className = "p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 text-xs";
+          const badgeHtml = isSkipped
+            ? `<span class="text-amber-400 font-semibold flex items-center gap-1"><i data-lucide="skip-forward" class="w-3.5 h-3.5"></i> Skipped by User</span>`
+            : `<span class="text-emerald-400 font-semibold flex items-center gap-1"><i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> Sent Successfully</span>`;
+
           card.innerHTML = `
             <div class="flex items-center justify-between">
-              <span class="text-emerald-400 font-semibold flex items-center gap-1">
-                <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> Sent Successfully
-              </span>
+              ${badgeHtml}
               <a href="${r.instagram_url}" target="_blank" class="text-slate-400 hover:text-rose-400">
                 <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
               </a>
             </div>
-            <p class="text-lg font-bold bangla text-rose-200">${r.caption}</p>
+            <p class="text-lg font-bold bangla ${isSkipped ? 'text-slate-400' : 'text-rose-200'}">${r.caption}</p>
             <div class="pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex justify-between">
               <span>Date: ${r.sent_at ? new Date(r.sent_at).toLocaleDateString() : '--'}</span>
               <span class="font-mono text-slate-400">${r.shortcode}</span>
@@ -860,6 +894,30 @@ DASHBOARD_HTML = """
         });
       } catch (err) {
         console.error("History fetch error:", err);
+      }
+    }
+
+    async function skipCurrentPhoto() {
+      if (!currentNextItem) return;
+      if (!confirm(`Are you sure you want to skip photo ${currentNextItem.shortcode}? It will not be emailed and the next photo will become #1.`)) return;
+      await skipShortcode(currentNextItem.shortcode);
+    }
+
+    async function skipShortcode(sc) {
+      try {
+        const res = await fetch('/api/queue/skip', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ shortcode: sc })
+        });
+        const data = await res.json();
+        if (data.success) {
+          loadAllData(true);
+        } else {
+          alert("Failed to skip: " + (data.error || "Unknown error"));
+        }
+      } catch (e) {
+        alert("Network error: " + e);
       }
     }
 

@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: abp-nadia-photo-mailer
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn dashboard:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GMAIL_USER
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: INSTAGRAM_USERNAME
+        value: pixell.poet
+      - key: RECIPIENT_EMAIL
+        value: edit.nadia@abp.in
+      - key: INSTAGRAM_SESSION_BASE64
+        sync: false
