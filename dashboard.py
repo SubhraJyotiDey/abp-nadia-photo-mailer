@@ -860,16 +860,17 @@ DASHBOARD_HTML = """
         const res = await fetch('/api/history');
         const data = await res.json();
         const records = data.history || [];
-        document.getElementById('historyCount').textContent = `${records.length} sent`;
+        const lastThree = records.slice(0, 3);
+        document.getElementById('historyCount').textContent = `Showing last ${lastThree.length} submissions`;
 
         const grid = document.getElementById('historyGrid');
         grid.innerHTML = '';
-        if (records.length === 0) {
+        if (lastThree.length === 0) {
           grid.innerHTML = `<div class="col-span-full text-slate-500 text-xs p-4 text-center bg-slate-900 rounded-xl">No submissions sent yet.</div>`;
           return;
         }
 
-        records.forEach(r => {
+        lastThree.forEach(r => {
           const isSkipped = r.status === 'skipped';
           const card = document.createElement('div');
           card.className = "p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 text-xs";

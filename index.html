@@ -73,7 +73,7 @@
 
   <main class="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-8">
 
-    <!-- Top Banner: Scheduled Mail Time & Countdown -->
+    <!-- Top Banner: Scheduled Mail Time & Countdown & Interactive Toggle -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div class="bg-gradient-to-br from-slate-900 to-slate-800/80 p-5 rounded-2xl border border-slate-800 shadow-sm flex items-center gap-4">
         <div class="w-12 h-12 rounded-xl bg-blue-950/80 text-blue-400 border border-blue-800/50 flex items-center justify-center shrink-0">
@@ -97,17 +97,25 @@
         </div>
       </div>
 
+      <!-- Interactive Toggle Switch for Approval vs Auto Mode -->
       <div class="bg-gradient-to-br from-slate-900 to-slate-800/80 p-5 rounded-2xl border border-slate-800 shadow-sm flex items-center gap-4">
         <div class="w-12 h-12 rounded-xl bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 flex items-center justify-center shrink-0">
-          <i data-lucide="shield-check" class="w-6 h-6"></i>
+          <i data-lucide="shield-check" class="w-6 h-6" id="modeIcon"></i>
         </div>
         <div class="flex-1">
-          <p class="text-xs text-slate-400 font-medium">Dispatch Mode</p>
-          <div class="flex items-center justify-between mt-1">
-            <span class="text-sm font-bold text-emerald-300" id="modeDisplayText">Manual Approval</span>
-            <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-semibold">Protected</span>
+          <div class="flex items-center justify-between">
+            <p class="text-xs text-slate-400 font-medium">Dispatch Mode</p>
+            <!-- Toggle Switch -->
+            <label class="relative inline-flex items-center cursor-pointer" title="Toggle Approval vs Auto Mode">
+              <input type="checkbox" id="modeToggle" class="sr-only peer" onchange="toggleDispatchMode(this.checked)">
+              <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-rose-600"></div>
+            </label>
           </div>
-          <p class="text-[11px] text-slate-400 mt-0.5">No email sent without your confirmation</p>
+          <div class="flex items-center justify-between mt-1">
+            <span class="text-sm font-bold text-emerald-300" id="modeDisplayText">Approval Mode</span>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-semibold" id="modeBadge">Safe</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5" id="modeDescText">Requires confirmation before sending</p>
         </div>
       </div>
     </div>
@@ -148,29 +156,48 @@
         <!-- Right: Email Details, AI Caption & Actions -->
         <div class="lg:col-span-7 space-y-6">
 
-          <!-- Artistic Bengali Caption Card -->
+          <!-- Artistic Bengali Caption Card with "Create New Caption" Button -->
           <div class="p-6 rounded-2xl bg-gradient-to-br from-rose-950/40 via-slate-900 to-slate-900 border border-rose-900/40 shadow-inner space-y-4">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between flex-wrap gap-2">
               <span class="text-xs font-semibold tracking-wider uppercase text-rose-400 flex items-center gap-1.5">
                 <i data-lucide="sparkles" class="w-4 h-4 text-rose-400"></i>
                 AI Bengali Caption (ছবির নাম)
               </span>
-              <span class="text-xs text-slate-400 flex items-center gap-1">
-                <i data-lucide="cpu" class="w-3.5 h-3.5 text-purple-400"></i>
-                <span>Gemini 3.5 Flash</span>
-              </span>
+
+              <!-- Create New Caption Button -->
+              <button onclick="generateNewCaption()" id="newCaptionBtn" class="px-3.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-800/60 text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 shadow-sm">
+                <i data-lucide="wand-2" class="w-3.5 h-3.5 text-rose-400"></i>
+                <span>Create New Caption</span>
+              </button>
             </div>
 
             <div class="flex items-center justify-between gap-4">
               <div class="space-y-1">
-                <h3 id="captionDisplay" class="text-3xl sm:text-4xl font-extrabold bangla text-rose-100 tracking-wide">
+                <h3 id="captionDisplay" class="text-3xl sm:text-4xl font-extrabold bangla text-rose-100 tracking-wide transition-all duration-300">
                   লোড হচ্ছে...
                 </h3>
-                <p class="text-xs text-slate-400">ছবির মেজাজ ও আবেগ অনুযায়ী তৈরি হবে শৈল্পিক নাম</p>
+                <p class="text-xs text-slate-400" id="captionSourceDesc">ছবির মেজাজ ও আবেগ অনুযায়ী শৈল্পিক নাম</p>
               </div>
             </div>
 
-            <div class="pt-3 border-t border-rose-900/30 flex items-center justify-between text-xs text-slate-400">
+            <!-- Manual Caption Entry Box -->
+            <div class="pt-3 border-t border-rose-900/30 space-y-1.5">
+              <label class="block text-xs text-slate-400 font-medium flex items-center justify-between">
+                <span>ম্যানুয়াল ক্যাপশন লিখুন (Manual Caption Entry):</span>
+                <span class="text-[10px] text-rose-400">১-২ শব্দ</span>
+              </label>
+              <div class="flex gap-2">
+                <input type="text" id="manualCaptionInput" placeholder="যেমন: ছেলেবেলা, আলোছায়া, নিস্তব্ধতা..." 
+                  onkeydown="if(event.key === 'Enter') applyManualCaption()"
+                  class="flex-1 bg-slate-950/90 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 bangla focus:outline-none focus:border-rose-500 transition">
+                <button onclick="applyManualCaption()" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition flex items-center gap-1.5 shrink-0 shadow-sm active:scale-95">
+                  <i data-lucide="check" class="w-4 h-4 text-emerald-400"></i>
+                  <span>Apply</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="pt-2 border-t border-rose-900/20 flex items-center justify-between text-xs text-slate-400">
               <span>ক্যামেরা: রেডমি নোট ১০ প্রো</span>
               <span>নাম: শুভ্র জ্যোতি দে • রানাঘাট, নদিয়া</span>
             </div>
@@ -231,17 +258,17 @@
       </div>
     </section>
 
-    <!-- SECTION 3: Sent History Archive -->
+    <!-- SECTION 3: Sent History Archive (Showing Last 3 Submissions) -->
     <section class="space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
           <i data-lucide="archive" class="w-5 h-5 text-emerald-400"></i>
-          Sent History Gallery (ABP Nadia Submissions)
+          Sent History Archive (Last 3 Submissions)
         </h2>
-        <span class="text-xs text-slate-400" id="historyCount">-- sent</span>
+        <span class="text-xs text-slate-400" id="historyCount">Showing last 3 submissions</span>
       </div>
 
-      <div id="historyGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div id="historyGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <!-- Rendered via JS -->
       </div>
     </section>
@@ -300,10 +327,17 @@
     let currentNextItem = null;
     let countdownInterval = null;
 
+    // Curated Artistic Bengali Titles for Photography
+    const artisticCaptions = [
+      "ছেলেবেলা", "দৃশ্যাকাব্য", "আলোছায়া", "নিস্তব্ধতা", "জলছবি",
+      "একাকীত্ব", "স্মৃতিচারণ", "মায়াবী ভোর", "মেঠোপথ", "জীবনযুদ্ধ",
+      "নদীমাতৃক", "প্রান্তিক", "বিষণ্ণতা", "গোধূলিলগ্ন", "মুহূর্তকাব্য",
+      "অনন্তকাল", "মেঘমল্লার", "রূপকথা", "চিরন্তন", "পল্লীগাথা",
+      "হৃদয়স্পন্দন", "কুয়াশাঘেরা", "শ্রাবণধারা", "উদাস দুপুর", "ভাসমান"
+    ];
+
     function getNextRun() {
-      // Calculate next 9:00 AM IST (UTC+5:30)
       const now = new Date();
-      // IST offset: +330 minutes
       const istTime = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60000);
       let target = new Date(istTime);
       target.setHours(9, 0, 0, 0);
@@ -338,8 +372,102 @@
       countdownInterval = setInterval(update, 1000);
     }
 
+    // Dispatch Mode Toggle Handler
+    function initDispatchMode() {
+      const savedMode = localStorage.getItem('dispatch_mode') || 'approval';
+      const isAuto = savedMode === 'auto';
+      const toggle = document.getElementById('modeToggle');
+      if (toggle) toggle.checked = isAuto;
+      updateModeUI(isAuto);
+    }
+
+    function toggleDispatchMode(isAuto) {
+      const mode = isAuto ? 'auto' : 'approval';
+      localStorage.setItem('dispatch_mode', mode);
+      updateModeUI(isAuto);
+    }
+
+    function updateModeUI(isAuto) {
+      const modeText = document.getElementById('modeDisplayText');
+      const modeBadge = document.getElementById('modeBadge');
+      const modeDesc = document.getElementById('modeDescText');
+      const statusBadge = document.getElementById('statusBadge');
+      const statusText = document.getElementById('statusText');
+      const modeIcon = document.getElementById('modeIcon');
+
+      if (isAuto) {
+        if (modeText) {
+          modeText.textContent = "Auto Mode (অটো-পাইলট)";
+          modeText.className = "text-sm font-bold text-rose-400";
+        }
+        if (modeBadge) {
+          modeBadge.textContent = "Daily 9 AM";
+          modeBadge.className = "text-[10px] px-2 py-0.5 rounded bg-rose-950/80 text-rose-400 border border-rose-800/60 font-semibold";
+        }
+        if (modeDesc) modeDesc.textContent = "Dispatches automatically every day at 09:00 AM IST";
+        if (statusBadge) {
+          statusBadge.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-rose-950/60 text-rose-300 border border-rose-800/60";
+          statusBadge.children[0].className = "w-2 h-2 rounded-full bg-rose-400 animate-pulse";
+        }
+        if (statusText) statusText.textContent = "Auto Mode Active";
+        if (modeIcon) modeIcon.setAttribute('data-lucide', 'zap');
+      } else {
+        if (modeText) {
+          modeText.textContent = "Approval Mode (অনুমোদন)";
+          modeText.className = "text-sm font-bold text-emerald-300";
+        }
+        if (modeBadge) {
+          modeBadge.textContent = "Protected";
+          modeBadge.className = "text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-semibold";
+        }
+        if (modeDesc) modeDesc.textContent = "No email will be sent without your explicit confirmation";
+        if (statusBadge) {
+          statusBadge.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-950/50 text-amber-300 border border-amber-800/50";
+          statusBadge.children[0].className = "w-2 h-2 rounded-full bg-amber-400";
+        }
+        if (statusText) statusText.textContent = "Approval Mode";
+        if (modeIcon) modeIcon.setAttribute('data-lucide', 'shield-check');
+      }
+      lucide.createIcons();
+    }
+
+    // Manual Caption Entry Handler
+    function applyManualCaption() {
+      const val = document.getElementById('manualCaptionInput').value.trim();
+      if (!val) {
+        alert("অনুগ্রহ করে একটি ক্যাপশন লিখুন (Please enter a caption)");
+        return;
+      }
+      document.getElementById('captionDisplay').textContent = val;
+      document.getElementById('emailCaptionPreview').textContent = val;
+      document.getElementById('captionSourceDesc').textContent = "ম্যানুয়াল ক্যাপশন প্রয়োগ করা হয়েছে (Custom caption applied)";
+
+      if (currentNextItem) {
+        localStorage.setItem(`custom_caption_${currentNextItem.shortcode}`, val);
+      }
+    }
+
+    // "Create New Caption" Button Handler
+    function generateNewCaption() {
+      let nextCaption = artisticCaptions[Math.floor(Math.random() * artisticCaptions.length)];
+      const current = document.getElementById('captionDisplay').textContent.trim();
+      while (nextCaption === current && artisticCaptions.length > 1) {
+        nextCaption = artisticCaptions[Math.floor(Math.random() * artisticCaptions.length)];
+      }
+
+      document.getElementById('captionDisplay').textContent = nextCaption;
+      document.getElementById('emailCaptionPreview').textContent = nextCaption;
+      document.getElementById('manualCaptionInput').value = nextCaption;
+      document.getElementById('captionSourceDesc').textContent = "নতুন শৈল্পিক ক্যাপশন তৈরি করা হয়েছে (New artistic caption crafted)";
+
+      if (currentNextItem) {
+        localStorage.setItem(`custom_caption_${currentNextItem.shortcode}`, nextCaption);
+      }
+    }
+
     async function loadData() {
       startCountdown();
+      initDispatchMode();
       await Promise.all([
         fetchQueue(),
         fetchHistory()
@@ -361,9 +489,13 @@
           document.getElementById('igLink').href = currentNextItem.instagram_url;
           document.getElementById('nextPhotoImage').src = currentNextItem.image_url;
 
-          const caption = currentNextItem.custom_caption || "শৈল্পিক দৃশ্য";
+          // Check for saved manual caption or fallback
+          const savedCaption = localStorage.getItem(`custom_caption_${currentNextItem.shortcode}`);
+          const caption = savedCaption || currentNextItem.custom_caption || "দৃশ্যাকাব্য";
+
           document.getElementById('captionDisplay').textContent = caption;
           document.getElementById('emailCaptionPreview').textContent = caption;
+          document.getElementById('manualCaptionInput').value = caption;
 
           // Render upcoming queue (items 1 onwards)
           const grid = document.getElementById('queueGrid');
@@ -398,6 +530,7 @@
       }
     }
 
+    // Fetches and displays ONLY the last 3 submissions
     async function fetchHistory() {
       try {
         const res = await fetch('./sent_history.json?t=' + Date.now());
@@ -409,16 +542,18 @@
         }));
         records.sort((a, b) => ((b.sent_at || b.skipped_at || '') > (a.sent_at || a.skipped_at || '') ? 1 : -1));
 
-        document.getElementById('historyCount').textContent = `${records.length} total`;
+        // STRICTLY LIMIT TO THE LAST 3 SUBMISSIONS
+        const lastThree = records.slice(0, 3);
+        document.getElementById('historyCount').textContent = `Showing last ${lastThree.length} submissions`;
 
         const grid = document.getElementById('historyGrid');
         grid.innerHTML = '';
-        if (records.length === 0) {
+        if (lastThree.length === 0) {
           grid.innerHTML = `<div class="col-span-full text-slate-500 text-xs p-4 text-center bg-slate-900 rounded-xl">No submissions recorded yet.</div>`;
           return;
         }
 
-        records.forEach(r => {
+        lastThree.forEach(r => {
           const isSkipped = r.status === 'skipped';
           const card = document.createElement('div');
           card.className = "p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 text-xs";
@@ -462,7 +597,7 @@
 
     function openSkipModal() {
       if (!currentNextItem) return;
-      alert(`To skip post ${currentNextItem.shortcode}, open GitHub Actions and trigger the workflow, or use the local dashboard!`);
+      alert(`To skip post ${currentNextItem.shortcode}, trigger workflow dispatch on GitHub Actions, or use the local dashboard!`);
     }
 
     window.onload = () => loadData();
