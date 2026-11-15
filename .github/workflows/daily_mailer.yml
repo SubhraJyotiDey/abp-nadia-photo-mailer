@@ -54,6 +54,8 @@ jobs:
           CMD_ARGS=""
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             CMD_ARGS="$CMD_ARGS --dry-run"
+          else
+            CMD_ARGS="$CMD_ARGS --force-send"
           fi
           if [ -n "${{ inputs.test_email }}" ]; then
             CMD_ARGS="$CMD_ARGS --test-email ${{ inputs.test_email }}"
