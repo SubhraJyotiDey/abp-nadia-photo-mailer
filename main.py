@@ -28,6 +28,7 @@ import instaloader
 load_dotenv()
 
 HISTORY_FILE = "sent_history.json"
+SETTINGS_FILE = "settings.json"
 DEFAULT_INSTAGRAM_USER = "pixell.poet"
 DEFAULT_RECIPIENT = "edit.nadia@abp.in"
 SUBJECT = "আপনার লেন্সে (শুভ্র জ্যোতি দে)"
@@ -36,6 +37,32 @@ EMAIL_TEMPLATE = """ছবির নাম : {caption}
 ক্যামেরা: রেডমি নোট ১০ প্রো 
 নাম : শুভ্র জ্যোতি দে 
 ঠিকানা : রানাঘাট, নদিয়া।"""
+
+
+def load_settings(filepath: str = SETTINGS_FILE) -> dict:
+    """Loads configuration settings."""
+    default_settings = {
+        "mode": "approval",   # "auto" or "approval"
+        "paused": True,       # True = will not send email without explicit trigger
+        "scheduled_time": "09:00",
+        "recipient_email": DEFAULT_RECIPIENT,
+        "custom_captions": {}
+    }
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                default_settings.update(data)
+                return default_settings
+        except Exception as e:
+            print(f"[WARN] Error reading {filepath}: {e}")
+    return default_settings
+
+
+def save_settings(settings: dict, filepath: str = SETTINGS_FILE) -> None:
+    """Saves configuration settings."""
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
 
 
 def load_history(filepath: str = HISTORY_FILE) -> dict:
@@ -232,17 +259,31 @@ def send_email(
 def main():
     parser = argparse.ArgumentParser(description="Daily Instagram Photo Mailer for ABP Nadia")
     parser.add_argument("--dry-run", action="store_true", help="Fetch photo and generate caption without sending email or saving history")
+    parser.add_argument("--force-send", action="store_true", help="Explicitly send email even if in approval or paused mode (used by dashboard button)")
     parser.add_argument("--test-email", type=str, default=None, help="Send email to this test address instead of ABP Nadia")
     parser.add_argument("--force-shortcode", type=str, default=None, help="Process a specific post shortcode for testing")
     parser.add_argument("--max-scan", type=int, default=500, help="Maximum number of posts to examine (default: 500)")
     args = parser.parse_args()
+
+    settings = load_settings()
 
     # Load credentials
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     gmail_user = os.environ.get("GMAIL_USER")
     gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD")
     target_username = os.environ.get("INSTAGRAM_USERNAME", DEFAULT_INSTAGRAM_USER)
-    recipient_email = args.test_email or os.environ.get("RECIPIENT_EMAIL", DEFAULT_RECIPIENT)
+    recipient_email = args.test_email or settings.get("recipient_email") or os.environ.get("RECIPIENT_EMAIL", DEFAULT_RECIPIENT)
+
+    # Safety checks
+    if not args.dry_run and not args.force_send:
+        if settings.get("paused", True):
+            print("\n[SAFETY PAUSED] Sending is currently PAUSED in settings.json. No email will be sent.")
+            print("To send today's photo, click 'Send Today\'s Photo Now' in the dashboard or unpause.\n")
+            return
+        if settings.get("mode", "approval") == "approval":
+            print("\n[APPROVAL MODE] Mailer is in Manual Approval mode. No email will be sent without your explicit approval.")
+            print("Please open the dashboard to review and approve today's photo.\n")
+            return
 
     if not args.dry_run:
         if not gmail_user or not gmail_app_password:
@@ -255,6 +296,7 @@ def main():
     print(f" Profile: @{target_username}")
     print(f" Recipient: {recipient_email}")
     print(f" Dry Run Mode: {args.dry_run}")
+    print(f" Mode: {settings.get('mode', 'approval')}, Paused: {settings.get('paused', True)}")
     print(f"==================================================")
 
     history = load_history()
@@ -325,13 +367,21 @@ def main():
     # Convert to standard JPEG format
     jpeg_bytes = prepare_jpeg_attachment(raw_image_bytes)
 
-    # Generate Bengali caption via Gemini
-    if gemini_api_key:
+    # Generate Bengali caption via Gemini or manual override
+    custom_captions = settings.get("custom_captions", {})
+    if target_post.shortcode in custom_captions and custom_captions[target_post.shortcode].strip():
+        caption = custom_captions[target_post.shortcode].strip()
+        print(f"[INFO] Using manual custom caption override: {caption}")
+    elif gemini_api_key:
         print("[INFO] Analyzing photo with Gemini to craft Bengali caption...")
         caption = generate_bengali_caption(jpeg_bytes, gemini_api_key)
     else:
         print("[WARN] GEMINI_API_KEY not provided (dry-run). Using sample caption 'ছেলেবেলা'.")
         caption = "ছেলেবেলা"
+
+    # Specific attachment naming format: SubhraJyotiDey_DD-MM-YYYY.jpg
+    today_str = datetime.now().strftime("%d-%m-%Y")
+    attachment_filename = f"SubhraJyotiDey_{today_str}.jpg"
 
     # Display preview
     body_text = EMAIL_TEMPLATE.format(caption=caption)
@@ -340,7 +390,7 @@ def main():
     print(f"Subject: {SUBJECT}")
     print("Body:")
     print(body_text)
-    print(f"Attachment: photo_{target_post.shortcode}.jpg ({len(jpeg_bytes)} bytes)")
+    print(f"Attachment: {attachment_filename} ({len(jpeg_bytes)} bytes)")
     print("-----------------------------------------------------\n")
 
     if args.dry_run:
@@ -354,7 +404,7 @@ def main():
         recipient_email=recipient_email,
         caption=caption,
         jpeg_bytes=jpeg_bytes,
-        filename=f"shuvro_jyoti_dey_{target_post.shortcode}.jpg",
+        filename=attachment_filename,
     )
 
     # Record in history

@@ -24,3 +24,6 @@ temp_downloads/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Execution logs
+mailer_log.txt
