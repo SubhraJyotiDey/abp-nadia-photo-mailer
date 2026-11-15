@@ -1,0 +1,26 @@
+# Environment files
+.env
+.env.local
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Temporary media & downloads
+temp_download/
+temp_downloads/
+*.jpg
+*.jpeg
+*.png
+*.webp
+!sample*.jpg
+
+# OS files
+.DS_Store
+Thumbs.db
