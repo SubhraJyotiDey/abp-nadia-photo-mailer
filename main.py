@@ -135,30 +135,25 @@ def generate_bengali_caption(image_bytes: bytes, gemini_api_key: str) -> str:
 
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-    # Try modern google-genai SDK first
+    # Try modern google-genai SDK first with model fallback list
+    candidate_models = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash"]
     try:
         from google import genai
-        from google.genai import types
-
         client = genai.Client(api_key=gemini_api_key)
 
-        # Attempt with gemini-2.5-flash or gemini-1.5-flash
-        model_name = "gemini-2.5-flash"
-        try:
-            response = client.models.generate_content(
-                model=model_name, contents=[image, prompt]
-            )
-            raw_text = response.text
-        except Exception:
-            model_name = "gemini-1.5-flash"
-            response = client.models.generate_content(
-                model=model_name, contents=[image, prompt]
-            )
-            raw_text = response.text
-
-        caption = clean_bengali_caption(raw_text)
-        print(f"[INFO] Generated caption using {model_name}: {caption} (raw: {raw_text.strip()})")
-        return caption
+        for model_name in candidate_models:
+            try:
+                response = client.models.generate_content(
+                    model=model_name, contents=[image, prompt]
+                )
+                raw_text = response.text
+                if raw_text:
+                    caption = clean_bengali_caption(raw_text)
+                    print(f"[INFO] Generated caption using {model_name}: {caption} (raw: {raw_text.strip()})")
+                    return caption
+            except Exception as model_err:
+                print(f"[WARN] Model {model_name} failed: {model_err}. Trying next candidate...")
+                continue
 
     except ImportError:
         pass
@@ -170,15 +165,21 @@ def generate_bengali_caption(image_bytes: bytes, gemini_api_key: str) -> str:
         import google.generativeai as legacy_genai
 
         legacy_genai.configure(api_key=gemini_api_key)
-        model = legacy_genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content([prompt, image])
-        raw_text = response.text
-        caption = clean_bengali_caption(raw_text)
-        print(f"[INFO] Generated caption using legacy SDK: {caption} (raw: {raw_text.strip()})")
-        return caption
+        for model_name in ["gemini-3.5-flash", "gemini-flash-latest", "gemini-1.5-flash"]:
+            try:
+                model = legacy_genai.GenerativeModel(model_name)
+                response = model.generate_content([prompt, image])
+                raw_text = response.text
+                if raw_text:
+                    caption = clean_bengali_caption(raw_text)
+                    print(f"[INFO] Generated caption using legacy SDK ({model_name}): {caption} (raw: {raw_text.strip()})")
+                    return caption
+            except Exception:
+                continue
     except Exception as e:
         print(f"[ERROR] Failed to generate caption via Gemini: {e}")
-        return "ছেলেবেলা"  # Poetic fallback default
+
+    return "ছেলেবেলা"  # Poetic fallback default
 
 
 def prepare_jpeg_attachment(image_bytes: bytes) -> bytes:
