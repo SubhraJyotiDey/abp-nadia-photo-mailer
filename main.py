@@ -306,71 +306,79 @@ def main():
 
     L = init_instaloader()
 
-    try:
-        print(f"[INFO] Fetching profile information for @{target_username}...")
-        profile = instaloader.Profile.from_username(L.context, target_username)
-    except Exception as e:
-        sys.exit(f"[FATAL] Failed to access Instagram profile @{target_username}: {e}")
-
-    target_post = None
+    target_shortcode = None
+    target_image_url = None
+    target_date_str = None
 
     if args.force_shortcode:
         print(f"[INFO] Using forced shortcode: {args.force_shortcode}")
         try:
             target_post = instaloader.Post.from_shortcode(L.context, args.force_shortcode)
+            target_shortcode = target_post.shortcode
+            target_image_url = target_post.url
+            target_date_str = target_post.date_utc.isoformat()
         except Exception as e:
-            sys.exit(f"[FATAL] Could not retrieve post with shortcode {args.force_shortcode}: {e}")
+            print(f"[WARN] Failed to load forced post via Instaloader: {e}")
     else:
-        print(f"[INFO] Scanning posts sequentially (latest to oldest)...")
-        count = 0
-        for post in profile.get_posts():
-            count += 1
-            if count > args.max_scan:
-                print(f"[WARN] Reached max scan limit ({args.max_scan} posts). Stopping.")
+        # 1. Try live Instagram scraping first
+        try:
+            print(f"[INFO] Fetching profile information for @{target_username}...")
+            profile = instaloader.Profile.from_username(L.context, target_username)
+            count = 0
+            for post in profile.get_posts():
+                count += 1
+                if count > args.max_scan:
+                    break
+                if post.shortcode in sent_shortcodes:
+                    continue
+                if post.is_video or post.typename != "GraphImage":
+                    continue
+                target_shortcode = post.shortcode
+                target_image_url = post.url
+                target_date_str = post.date_utc.isoformat()
+                print(f"[MATCH] Found next unsent single photo from Instagram: {target_shortcode}")
                 break
+        except Exception as e:
+            print(f"[WARN] Live Instagram scrape failed ({e}). Falling back to repository queue.json...")
 
-            shortcode = post.shortcode
+    # 2. Resilient fallback to queue.json if live scrape was blocked by Instagram
+    if not target_shortcode and os.path.exists("queue.json"):
+        try:
+            with open("queue.json", "r", encoding="utf-8") as f:
+                queue_data = json.load(f)
+            for item in queue_data.get("queue", []):
+                sc = item.get("shortcode")
+                if sc in sent_shortcodes:
+                    continue
+                target_shortcode = sc
+                target_image_url = item.get("image_url")
+                target_date_str = item.get("date_utc")
+                print(f"[MATCH] Selected next unsent photo from queue.json: {target_shortcode}")
+                break
+        except Exception as q_err:
+            print(f"[ERROR] Failed to read queue.json: {q_err}")
 
-            # Check if previously sent
-            if shortcode in sent_shortcodes:
-                continue
-
-            # Filter out videos and reels
-            if post.is_video:
-                print(f"[SKIP] Post {shortcode} is a video/reel.")
-                continue
-
-            # Filter out multi-photo carousels (GraphSidecar)
-            if post.typename != "GraphImage":
-                print(f"[SKIP] Post {shortcode} is type '{post.typename}' (not a single photo).")
-                continue
-
-            # Found the target post!
-            target_post = post
-            print(f"[MATCH] Found next unsent single photo post: {shortcode} (Posted: {post.date_utc} UTC)")
-            break
-
-    if not target_post:
-        print("[INFO] No new unsent single photo found on profile. Nothing to send today.")
+    if not target_shortcode or not target_image_url:
+        print("[INFO] No new unsent single photo found to send. Exiting.")
         return
 
-    # Download image bytes directly from post.url
-    print(f"[INFO] Downloading image from CDN...")
+    # Download image bytes directly from target_image_url
+    print(f"[INFO] Downloading image from CDN for {target_shortcode}...")
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        resp = requests.get(target_post.url, headers=headers, timeout=30)
+        resp = requests.get(target_image_url, headers=headers, timeout=30)
         resp.raise_for_status()
         raw_image_bytes = resp.content
     except Exception as e:
-        sys.exit(f"[FATAL] Failed to download image for post {target_post.shortcode}: {e}")
+        sys.exit(f"[FATAL] Failed to download image for post {target_shortcode}: {e}")
 
     # Convert to standard JPEG format
     jpeg_bytes = prepare_jpeg_attachment(raw_image_bytes)
 
     # Generate Bengali caption via Gemini or manual override
     custom_captions = settings.get("custom_captions", {})
-    if target_post.shortcode in custom_captions and custom_captions[target_post.shortcode].strip():
-        caption = custom_captions[target_post.shortcode].strip()
+    if target_shortcode in custom_captions and custom_captions[target_shortcode].strip():
+        caption = custom_captions[target_shortcode].strip()
         print(f"[INFO] Using manual custom caption override: {caption}")
     elif gemini_api_key:
         print("[INFO] Analyzing photo with Gemini to craft Bengali caption...")
@@ -408,14 +416,15 @@ def main():
     )
 
     # Record in history
-    history.setdefault("posts", {})[target_post.shortcode] = {
+    history.setdefault("posts", {})[target_shortcode] = {
         "sent_at": datetime.now(timezone.utc).isoformat(),
         "caption": caption,
-        "post_date_utc": target_post.date_utc.isoformat(),
-        "instagram_url": f"https://www.instagram.com/p/{target_post.shortcode}/",
+        "post_date_utc": target_date_str,
+        "instagram_url": f"https://www.instagram.com/p/{target_shortcode}/",
+        "status": "sent",
     }
     save_history(history)
-    print(f"[SUCCESS] Successfully completed daily mailing for post {target_post.shortcode}!")
+    print(f"[SUCCESS] Successfully completed daily mailing for post {target_shortcode}!")
 
 
 if __name__ == "__main__":
