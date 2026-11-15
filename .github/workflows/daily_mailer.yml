@@ -60,13 +60,14 @@ jobs:
           fi
 
           python main.py $CMD_ARGS
+          python sync_queue.py || true
 
-      - name: Commit and Push Updated History
+      - name: Commit and Push Updated History & Queue
         if: success() && inputs.dry_run != true
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add sent_history.json
+          git add sent_history.json queue.json
           if ! git diff --staged --quiet; then
             git commit -m "chore: record sent photo [skip ci]"
             git push

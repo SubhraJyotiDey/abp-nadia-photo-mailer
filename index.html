@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="bn" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>আপনার লেন্সে | ABP Nadia Daily Photo Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Anek+Bangla:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            bengali: ['"Anek Bangla"', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#fff1f2',
+              500: '#e11d48',
+              600: '#be123c',
+              700: '#9f1239',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .bangla { font-family: 'Anek Bangla', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-16 selection:bg-rose-500 selection:text-white">
+
+  <!-- Header -->
+  <header class="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center shadow-lg shadow-rose-900/30">
+          <i data-lucide="camera" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-bold tracking-tight bangla flex items-center gap-2">
+            আপনার লেন্সে
+            <span class="text-xs font-normal text-rose-400 bg-rose-950/60 border border-rose-800/60 px-2 py-0.5 rounded-full">ABP Nadia</span>
+          </h1>
+          <p class="text-xs text-slate-400">শুভ্র জ্যোতি দে • @pixell.poet</p>
+        </div>
+      </div>
+
+      <!-- Controls & Status Badge -->
+      <div class="flex items-center gap-2 sm:gap-3">
+        <div id="statusBadge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-950/50 text-amber-300 border border-amber-800/50">
+          <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+          <span id="statusText">Approval Mode</span>
+        </div>
+
+        <a href="https://github.com/SubhraJyotiDey/abp-nadia-photo-mailer/actions/workflows/daily_mailer.yml" target="_blank" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition" title="Open GitHub Actions">
+          <i data-lucide="play" class="w-3.5 h-3.5 text-rose-400"></i>
+          <span>Actions</span>
+        </a>
+
+        <button onclick="loadData()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition" title="Refresh Data">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-8">
+
+    <!-- Top Banner: Scheduled Mail Time & Countdown -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800/80 p-5 rounded-2xl border border-slate-800 shadow-sm flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-blue-950/80 text-blue-400 border border-blue-800/50 flex items-center justify-center shrink-0">
+          <i data-lucide="clock" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400 font-medium">Daily Scheduled Dispatch</p>
+          <p class="text-base font-bold text-slate-100">09:00 AM IST</p>
+          <p class="text-[11px] text-slate-400" id="nextRunDisplay">Tomorrow</p>
+        </div>
+      </div>
+
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800/80 p-5 rounded-2xl border border-slate-800 shadow-sm flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-purple-950/80 text-purple-400 border border-purple-800/50 flex items-center justify-center shrink-0">
+          <i data-lucide="hourglass" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400 font-medium">Time Remaining</p>
+          <p class="text-xl font-extrabold text-purple-300 tracking-wider font-mono" id="countdownTimer">-- : -- : --</p>
+          <p class="text-[11px] text-slate-400">Until next scheduled dispatch</p>
+        </div>
+      </div>
+
+      <div class="bg-gradient-to-br from-slate-900 to-slate-800/80 p-5 rounded-2xl border border-slate-800 shadow-sm flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 flex items-center justify-center shrink-0">
+          <i data-lucide="shield-check" class="w-6 h-6"></i>
+        </div>
+        <div class="flex-1">
+          <p class="text-xs text-slate-400 font-medium">Dispatch Mode</p>
+          <div class="flex items-center justify-between mt-1">
+            <span class="text-sm font-bold text-emerald-300" id="modeDisplayText">Manual Approval</span>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 font-semibold">Protected</span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">No email sent without your confirmation</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- HERO SECTION: Next Photo to be Mailed -->
+    <section class="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-2xl">
+      <div class="p-4 sm:p-6 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+          <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+            📸 Next Photo to be Mailed
+            <span class="text-xs font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700">Priority #1</span>
+          </h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400">Recipient:</span>
+          <code class="text-xs font-mono px-2 py-0.5 rounded bg-slate-950 text-rose-300 border border-slate-800">edit.nadia@abp.in</code>
+        </div>
+      </div>
+
+      <div class="p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        
+        <!-- Left: Image Preview -->
+        <div class="lg:col-span-5 flex flex-col items-center">
+          <div class="relative w-full aspect-square sm:aspect-[4/5] rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-lg group">
+            <img id="nextPhotoImage" src="" alt="Next Queued Photo" class="w-full h-full object-cover transition duration-300 group-hover:scale-105" onerror="this.src='https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=800'">
+            <a id="igLink" href="#" target="_blank" class="absolute bottom-3 right-3 bg-slate-950/80 hover:bg-rose-600 text-white p-2.5 rounded-xl border border-slate-700 backdrop-blur-md transition shadow-md flex items-center gap-1.5 text-xs">
+              <i data-lucide="external-link" class="w-4 h-4"></i>
+              <span>View on Instagram</span>
+            </a>
+          </div>
+          <p class="text-xs text-slate-400 mt-3 text-center flex items-center gap-1.5">
+            <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+            <span id="nextPhotoDate">--</span> • Post Shortcode: <span id="nextPhotoShortcode" class="font-mono text-slate-200">--</span>
+          </p>
+        </div>
+
+        <!-- Right: Email Details, AI Caption & Actions -->
+        <div class="lg:col-span-7 space-y-6">
+
+          <!-- Artistic Bengali Caption Card -->
+          <div class="p-6 rounded-2xl bg-gradient-to-br from-rose-950/40 via-slate-900 to-slate-900 border border-rose-900/40 shadow-inner space-y-4">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold tracking-wider uppercase text-rose-400 flex items-center gap-1.5">
+                <i data-lucide="sparkles" class="w-4 h-4 text-rose-400"></i>
+                AI Bengali Caption (ছবির নাম)
+              </span>
+              <span class="text-xs text-slate-400 flex items-center gap-1">
+                <i data-lucide="cpu" class="w-3.5 h-3.5 text-purple-400"></i>
+                <span>Gemini 3.5 Flash</span>
+              </span>
+            </div>
+
+            <div class="flex items-center justify-between gap-4">
+              <div class="space-y-1">
+                <h3 id="captionDisplay" class="text-3xl sm:text-4xl font-extrabold bangla text-rose-100 tracking-wide">
+                  লোড হচ্ছে...
+                </h3>
+                <p class="text-xs text-slate-400">ছবির মেজাজ ও আবেগ অনুযায়ী তৈরি হবে শৈল্পিক নাম</p>
+              </div>
+            </div>
+
+            <div class="pt-3 border-t border-rose-900/30 flex items-center justify-between text-xs text-slate-400">
+              <span>ক্যামেরা: রেডমি নোট ১০ প্রো</span>
+              <span>নাম: শুভ্র জ্যোতি দে • রানাঘাট, নদিয়া</span>
+            </div>
+          </div>
+
+          <!-- Email Preview Box -->
+          <div class="p-5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-3 font-mono text-xs">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-800/80">
+              <span class="text-slate-400 font-sans font-medium text-xs">Full Email Body Preview</span>
+              <span class="text-slate-400 text-[11px] font-sans">বিষয়: আপনার লেন্সে (শুভ্র জ্যোতি দে)</span>
+            </div>
+            <div class="text-slate-300 space-y-1 bangla text-sm">
+              <p>ছবির নাম : <span id="emailCaptionPreview" class="text-rose-400 font-bold">--</span></p>
+              <p>ক্যামেরা: রেডমি নোট ১০ প্রো</p>
+              <p>নাম : শুভ্র জ্যোতি দে</p>
+              <p>ঠিকানা : রানাঘাট, নদিয়া।</p>
+            </div>
+            <div class="pt-2 border-t border-slate-800/80 flex items-center justify-between text-slate-400 text-[11px] font-sans">
+              <span class="flex items-center gap-1">
+                <i data-lucide="paperclip" class="w-3.5 h-3.5 text-rose-400"></i>
+                Attachment:
+              </span>
+              <span id="attachmentNameDisplay" class="font-mono text-rose-300 font-semibold">SubhraJyotiDey_DD-MM-YYYY.jpg</span>
+            </div>
+          </div>
+
+          <!-- Action Buttons: Send Now + Skip Button -->
+          <div class="pt-2 flex flex-col sm:flex-row gap-3">
+            <button onclick="openSendModal()" class="flex-1 py-4 rounded-2xl bg-gradient-to-r from-rose-600 via-rose-500 to-amber-500 hover:from-rose-500 hover:to-amber-400 text-white font-bold text-base shadow-xl shadow-rose-900/40 hover:shadow-rose-900/60 transition transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2">
+              <i data-lucide="send" class="w-5 h-5"></i>
+              <span>Send Today's Photo Now</span>
+            </button>
+            <button onclick="openSkipModal()" class="px-5 py-4 rounded-2xl bg-slate-800 hover:bg-slate-750 hover:border-amber-600/50 text-amber-300 font-bold text-sm border border-slate-700 transition flex items-center justify-center gap-2 shrink-0 shadow-lg">
+              <i data-lucide="skip-forward" class="w-4 h-4 text-amber-400"></i>
+              <span>Skip This Photo</span>
+            </button>
+          </div>
+          <p class="text-center text-xs text-slate-400 mt-2">
+            🔒 Safety Protected: No email is ever sent without your explicit click on the confirmation modal.
+          </p>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Upcoming Queue (Next Photos in Line) -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="layers" class="w-5 h-5 text-purple-400"></i>
+          Upcoming Queue (Next Photos in Sequence)
+        </h2>
+        <span class="text-xs text-slate-400" id="queueCount">-- photos queued</span>
+      </div>
+
+      <div id="queueGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+    <!-- SECTION 3: Sent History Archive -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+          <i data-lucide="archive" class="w-5 h-5 text-emerald-400"></i>
+          Sent History Gallery (ABP Nadia Submissions)
+        </h2>
+        <span class="text-xs text-slate-400" id="historyCount">-- sent</span>
+      </div>
+
+      <div id="historyGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- CONFIRMATION / SEND MODAL -->
+  <div id="confirmModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 space-y-6 shadow-2xl relative">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-rose-950/80 text-rose-400 border border-rose-800/60 flex items-center justify-center shrink-0">
+          <i data-lucide="mail-check" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-white">Confirm Email Dispatch</h3>
+          <p class="text-xs text-slate-400">Review details before sending to ABP Nadia</p>
+        </div>
+      </div>
+
+      <div class="p-4 rounded-xl bg-slate-950 border border-slate-850 space-y-2 text-xs">
+        <div class="flex justify-between text-slate-400">
+          <span>Recipient:</span>
+          <span class="text-slate-200 font-mono">edit.nadia@abp.in</span>
+        </div>
+        <div class="flex justify-between text-slate-400">
+          <span>Subject:</span>
+          <span class="text-slate-200 font-mono">আপনার লেন্সে (শুভ্র জ্যোতি দে)</span>
+        </div>
+        <div class="flex justify-between text-slate-400">
+          <span>ছবির নাম (Caption):</span>
+          <span class="text-rose-400 font-bold bangla text-sm" id="modalCaption">--</span>
+        </div>
+        <div class="flex justify-between text-slate-400">
+          <span>Attachment:</span>
+          <span class="text-slate-200 font-mono" id="modalAttachment">--</span>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <p class="text-xs text-slate-300 font-medium">To trigger dispatch in GitHub Actions:</p>
+        <a href="https://github.com/SubhraJyotiDey/abp-nadia-photo-mailer/actions/workflows/daily_mailer.yml" target="_blank" class="w-full py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-900/40 transition flex items-center justify-center gap-2">
+          <i data-lucide="play" class="w-4 h-4"></i>
+          <span>Click Here to Run Workflow on GitHub Actions</span>
+        </a>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-2">
+        <button onclick="closeSendModal()" class="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentNextItem = null;
+    let countdownInterval = null;
+
+    function getNextRun() {
+      // Calculate next 9:00 AM IST (UTC+5:30)
+      const now = new Date();
+      // IST offset: +330 minutes
+      const istTime = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60000);
+      let target = new Date(istTime);
+      target.setHours(9, 0, 0, 0);
+      if (istTime >= target) {
+        target.setDate(target.getDate() + 1);
+      }
+      return target;
+    }
+
+    function startCountdown() {
+      const target = getNextRun();
+      const pad = (n) => String(n).padStart(2, '0');
+
+      document.getElementById('nextRunDisplay').textContent = target.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + ", 09:00 AM IST";
+
+      const now = new Date();
+      const todayStr = `${pad(now.getDate())}-${pad(now.getMonth() + 1)}-${now.getFullYear()}`;
+      document.getElementById('attachmentNameDisplay').textContent = `SubhraJyotiDey_${todayStr}.jpg`;
+
+      function update() {
+        const curr = new Date();
+        const currIst = new Date(curr.getTime() + (curr.getTimezoneOffset() + 330) * 60000);
+        let diff = Math.max(0, Math.floor((target - currIst) / 1000));
+        const h = Math.floor(diff / 3600);
+        const m = Math.floor((diff % 3600) / 60);
+        const s = diff % 60;
+        document.getElementById('countdownTimer').textContent = `${pad(h)} : ${pad(m)} : ${pad(s)}`;
+      }
+
+      update();
+      if (countdownInterval) clearInterval(countdownInterval);
+      countdownInterval = setInterval(update, 1000);
+    }
+
+    async function loadData() {
+      startCountdown();
+      await Promise.all([
+        fetchQueue(),
+        fetchHistory()
+      ]);
+      lucide.createIcons();
+    }
+
+    async function fetchQueue() {
+      try {
+        const res = await fetch('./queue.json?t=' + Date.now());
+        const data = await res.json();
+        const queue = data.queue || [];
+        document.getElementById('queueCount').textContent = `${queue.length} upcoming single photos`;
+
+        if (queue.length > 0) {
+          currentNextItem = queue[0];
+          document.getElementById('nextPhotoShortcode').textContent = currentNextItem.shortcode;
+          document.getElementById('nextPhotoDate').textContent = currentNextItem.date_utc;
+          document.getElementById('igLink').href = currentNextItem.instagram_url;
+          document.getElementById('nextPhotoImage').src = currentNextItem.image_url;
+
+          const caption = currentNextItem.custom_caption || "শৈল্পিক দৃশ্য";
+          document.getElementById('captionDisplay').textContent = caption;
+          document.getElementById('emailCaptionPreview').textContent = caption;
+
+          // Render upcoming queue (items 1 onwards)
+          const grid = document.getElementById('queueGrid');
+          grid.innerHTML = '';
+          queue.slice(1).forEach((item, i) => {
+            const card = document.createElement('div');
+            card.className = "bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col group hover:border-slate-700 transition";
+            card.innerHTML = `
+              <div class="aspect-square bg-slate-950 relative overflow-hidden">
+                <img src="${item.image_url}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" onerror="this.src='https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=500'">
+                <span class="absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-950/80 text-purple-300 border border-slate-800 backdrop-blur-md">
+                  #${i + 2} in line
+                </span>
+              </div>
+              <div class="p-2.5 text-xs flex flex-col justify-between flex-1">
+                <div>
+                  <p class="font-mono text-slate-300 font-semibold truncate">${item.shortcode}</p>
+                  <p class="text-[10px] text-slate-400 mt-0.5">${item.date_utc}</p>
+                </div>
+                <div class="mt-2 flex items-center justify-between">
+                  <a href="${item.instagram_url}" target="_blank" class="text-[10px] text-slate-400 hover:text-rose-400 flex items-center gap-1">
+                    <i data-lucide="external-link" class="w-3 h-3"></i> Post
+                  </a>
+                </div>
+              </div>
+            `;
+            grid.appendChild(card);
+          });
+        }
+      } catch (err) {
+        console.error("Queue load failed:", err);
+      }
+    }
+
+    async function fetchHistory() {
+      try {
+        const res = await fetch('./sent_history.json?t=' + Date.now());
+        const data = await res.json();
+        const posts = data.posts || {};
+        const records = Object.keys(posts).map(k => ({
+          shortcode: k,
+          ...posts[k]
+        }));
+        records.sort((a, b) => ((b.sent_at || b.skipped_at || '') > (a.sent_at || a.skipped_at || '') ? 1 : -1));
+
+        document.getElementById('historyCount').textContent = `${records.length} total`;
+
+        const grid = document.getElementById('historyGrid');
+        grid.innerHTML = '';
+        if (records.length === 0) {
+          grid.innerHTML = `<div class="col-span-full text-slate-500 text-xs p-4 text-center bg-slate-900 rounded-xl">No submissions recorded yet.</div>`;
+          return;
+        }
+
+        records.forEach(r => {
+          const isSkipped = r.status === 'skipped';
+          const card = document.createElement('div');
+          card.className = "p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 text-xs";
+          const badgeHtml = isSkipped
+            ? `<span class="text-amber-400 font-semibold flex items-center gap-1"><i data-lucide="skip-forward" class="w-3.5 h-3.5"></i> Skipped by User</span>`
+            : `<span class="text-emerald-400 font-semibold flex items-center gap-1"><i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i> Sent Successfully</span>`;
+
+          const dateStr = r.sent_at || r.skipped_at;
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              ${badgeHtml}
+              <a href="${r.instagram_url}" target="_blank" class="text-slate-400 hover:text-rose-400">
+                <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              </a>
+            </div>
+            <p class="text-lg font-bold bangla ${isSkipped ? 'text-slate-400' : 'text-rose-200'}">${r.caption}</p>
+            <div class="pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex justify-between">
+              <span>Date: ${dateStr ? new Date(dateStr).toLocaleDateString() : '--'}</span>
+              <span class="font-mono text-slate-400">${r.shortcode}</span>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+      } catch (err) {
+        console.error("History load error:", err);
+      }
+    }
+
+    function openSendModal() {
+      const caption = document.getElementById('captionDisplay').textContent;
+      const attachment = document.getElementById('attachmentNameDisplay').textContent;
+      document.getElementById('modalCaption').textContent = caption;
+      document.getElementById('modalAttachment').textContent = attachment;
+      document.getElementById('confirmModal').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeSendModal() {
+      document.getElementById('confirmModal').classList.add('hidden');
+    }
+
+    function openSkipModal() {
+      if (!currentNextItem) return;
+      alert(`To skip post ${currentNextItem.shortcode}, open GitHub Actions and trigger the workflow, or use the local dashboard!`);
+    }
+
+    window.onload = () => loadData();
+  </script>
+</body>
+</html>
