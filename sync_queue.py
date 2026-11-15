@@ -44,43 +44,46 @@ def sync():
     )
     username = os.environ.get("INSTAGRAM_USERNAME", DEFAULT_USER)
 
-    print(f"[INFO] Scanning posts for @{username} to update queue.json...")
-    profile = instaloader.Profile.from_username(L.context, username)
+    try:
+        print(f"[INFO] Scanning posts for @{username} to update queue.json...")
+        profile = instaloader.Profile.from_username(L.context, username)
 
-    queue = []
-    count = 0
-    for post in profile.get_posts():
-        count += 1
-        if count > 100:
-            break
-        if post.shortcode in sent_keys:
-            continue
-        if post.is_video or post.typename != "GraphImage":
-            continue
+        queue = []
+        count = 0
+        for post in profile.get_posts():
+            count += 1
+            if count > 100:
+                break
+            if post.shortcode in sent_keys:
+                continue
+            if post.is_video or post.typename != "GraphImage":
+                continue
 
-        caption = custom_captions.get(post.shortcode, "")
+            caption = custom_captions.get(post.shortcode, "")
 
-        queue.append({
-            "shortcode": post.shortcode,
-            "date_utc": post.date_utc.strftime("%d %b %Y, %I:%M %p"),
-            "image_url": post.url,
-            "instagram_url": f"https://www.instagram.com/p/{post.shortcode}/",
-            "custom_caption": caption,
-            "is_next": len(queue) == 0
-        })
+            queue.append({
+                "shortcode": post.shortcode,
+                "date_utc": post.date_utc.strftime("%d %b %Y, %I:%M %p"),
+                "image_url": post.url,
+                "instagram_url": f"https://www.instagram.com/p/{post.shortcode}/",
+                "custom_caption": caption,
+                "is_next": len(queue) == 0
+            })
 
-        if len(queue) >= 10:
-            break
+            if len(queue) >= 10:
+                break
 
-    with open(QUEUE_FILE, "w", encoding="utf-8") as f:
-        json.dump({
-            "last_synced": profile.get_posts_count() if hasattr(profile, 'get_posts_count') else None,
-            "queue": queue
-        }, f, indent=2, ensure_ascii=False)
+        with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "last_synced": profile.get_posts_count() if hasattr(profile, 'get_posts_count') else None,
+                "queue": queue
+            }, f, indent=2, ensure_ascii=False)
 
-    print(f"[SUCCESS] Wrote {len(queue)} items to {QUEUE_FILE}.")
-    if queue:
-        print(f"[NEXT CANDIDATE] {queue[0]['shortcode']} ({queue[0]['date_utc']})")
+        print(f"[SUCCESS] Wrote {len(queue)} items to {QUEUE_FILE}.")
+        if queue:
+            print(f"[NEXT CANDIDATE] {queue[0]['shortcode']} ({queue[0]['date_utc']})")
+    except Exception as e:
+        print(f"[WARN] sync_queue live scrape skipped: {e}")
 
 if __name__ == "__main__":
     sync()
