@@ -1,6 +1,6 @@
 {
-  "mode": "approval",
-  "paused": true,
+  "mode": "auto",
+  "paused": false,
   "scheduled_time": "09:00",
   "recipient_email": "edit.nadia@abp.in",
   "custom_captions": {}
