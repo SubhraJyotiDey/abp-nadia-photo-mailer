@@ -20,6 +20,8 @@ temp_downloads/
 *.png
 *.webp
 !sample*.jpg
+!queue_images/
+!queue_images/**
 
 # OS files
 .DS_Store

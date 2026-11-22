@@ -372,52 +372,68 @@ def main():
         print("[INFO] No new unsent single photo found to send. Exiting.")
         return
 
-    # Download image bytes directly from target_image_url, with fallback through queue candidates
+    # 1. First check if cached image exists on disk in queue_images/
     raw_image_bytes = None
-    headers = {"User-Agent": "Mozilla/5.0"}
+    local_img_candidate = f"queue_images/{target_shortcode}.jpg"
+    if os.path.exists(local_img_candidate) and os.path.getsize(local_img_candidate) > 0:
+        print(f"[INFO] Loading pre-cached image from repository disk: {local_img_candidate}")
+        with open(local_img_candidate, "rb") as f:
+            raw_image_bytes = f.read()
 
-    # Try the primary target first
-    print(f"[INFO] Downloading image from CDN for {target_shortcode}...")
-    try:
-        resp = requests.get(target_image_url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        raw_image_bytes = resp.content
-    except Exception as e:
-        print(f"[WARN] CDN URL expired/failed for {target_shortcode}: {e}")
+    # 2. If not on disk, download image bytes directly from target_image_url, with fallback through queue candidates
+    if raw_image_bytes is None:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        print(f"[INFO] Downloading image from CDN for {target_shortcode}...")
+        try:
+            resp = requests.get(target_image_url, headers=headers, timeout=30)
+            resp.raise_for_status()
+            raw_image_bytes = resp.content
+        except Exception as e:
+            print(f"[WARN] CDN URL expired/failed for {target_shortcode}: {e}")
 
-        # Try remaining queue candidates if the CDN URL has expired
-        for item in queue_candidates[1:] if queue_candidates else []:
-            sc = item.get("shortcode")
-            url = item.get("image_url")
-            print(f"[INFO] Trying next queue candidate: {sc}...")
-            try:
-                resp = requests.get(url, headers=headers, timeout=30)
-                resp.raise_for_status()
-                raw_image_bytes = resp.content
-                target_shortcode = sc
-                target_image_url = url
-                target_date_str = item.get("date_utc")
-                print(f"[MATCH] Successfully downloaded image for fallback candidate: {sc}")
-                break
-            except Exception as e2:
-                print(f"[WARN] CDN URL also expired for {sc}: {e2}")
-                continue
+            # Try remaining queue candidates if the CDN URL has expired
+            for item in queue_candidates[1:] if queue_candidates else []:
+                sc = item.get("shortcode")
+                # Also check if this candidate has a local image
+                cand_local = f"queue_images/{sc}.jpg"
+                if os.path.exists(cand_local) and os.path.getsize(cand_local) > 0:
+                    print(f"[INFO] Using pre-cached image for fallback candidate: {cand_local}")
+                    with open(cand_local, "rb") as f:
+                        raw_image_bytes = f.read()
+                    target_shortcode = sc
+                    target_date_str = item.get("date_utc")
+                    break
 
-        # Last resort: try fetching fresh URL via Instaloader for the target post
-        if raw_image_bytes is None:
-            print(f"[INFO] All queue CDN URLs expired. Attempting fresh URL fetch via Instaloader for {target_shortcode}...")
-            try:
-                fresh_post = instaloader.Post.from_shortcode(L.context, target_shortcode)
-                fresh_url = fresh_post.url
-                resp = requests.get(fresh_url, headers=headers, timeout=30)
-                resp.raise_for_status()
-                raw_image_bytes = resp.content
-                print(f"[SUCCESS] Fetched fresh CDN URL for {target_shortcode}")
-            except Exception as e3:
-                print(f"[WARN] Instaloader fresh fetch also failed: {e3}")
+                url = item.get("image_url")
+                print(f"[INFO] Trying next queue candidate: {sc}...")
+                try:
+                    resp = requests.get(url, headers=headers, timeout=30)
+                    resp.raise_for_status()
+                    raw_image_bytes = resp.content
+                    target_shortcode = sc
+                    target_image_url = url
+                    target_date_str = item.get("date_utc")
+                    print(f"[MATCH] Successfully downloaded image for fallback candidate: {sc}")
+                    break
+                except Exception as e2:
+                    print(f"[WARN] CDN URL also expired for {sc}: {e2}")
+                    continue
+
+            # Last resort: try fetching fresh URL via Instaloader for the target post
+            if raw_image_bytes is None:
+                print(f"[INFO] All queue CDN URLs expired. Attempting fresh URL fetch via Instaloader for {target_shortcode}...")
+                try:
+                    fresh_post = instaloader.Post.from_shortcode(L.context, target_shortcode)
+                    fresh_url = fresh_post.url
+                    resp = requests.get(fresh_url, headers=headers, timeout=30)
+                    resp.raise_for_status()
+                    raw_image_bytes = resp.content
+                    print(f"[SUCCESS] Fetched fresh CDN URL for {target_shortcode}")
+                except Exception as e3:
+                    print(f"[WARN] Instaloader fresh fetch also failed: {e3}")
 
     if raw_image_bytes is None:
-        sys.exit(f"[FATAL] Failed to download image for any candidate. All CDN URLs are expired and Instaloader is blocked. Please run sync_queue.py locally to refresh queue.json.")
+        sys.exit(f"[FATAL] Failed to obtain image for any candidate. Please run sync_queue.py to refresh queue_images/.")
 
     # Convert to standard JPEG format
     jpeg_bytes = prepare_jpeg_attachment(raw_image_bytes)
@@ -471,6 +487,16 @@ def main():
         "status": "sent",
     }
     save_history(history)
+
+    # Remove sent image from queue_images to keep repository tidy
+    local_sent_img = f"queue_images/{target_shortcode}.jpg"
+    if os.path.exists(local_sent_img):
+        try:
+            os.remove(local_sent_img)
+            print(f"[INFO] Removed mailed image {local_sent_img} from local cache.")
+        except Exception as rm_err:
+            print(f"[WARN] Could not remove {local_sent_img}: {rm_err}")
+
     print(f"[SUCCESS] Successfully completed daily mailing for post {target_shortcode}!")
 
 

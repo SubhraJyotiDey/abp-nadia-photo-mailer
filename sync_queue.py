@@ -1,12 +1,13 @@
 """
-Generates queue.json for GitHub Pages static dashboard.
+Generates queue.json and pre-caches images in queue_images/ for GitHub Pages static dashboard.
 Scans @pixell.poet using Instagram's Polaris web client timeline,
-checks sent_history.json, and produces a fresh queue.json with valid CDN URLs.
+checks sent_history.json, downloads images locally to prevent CDN expiry, and produces queue.json.
 """
 
 import os
 import json
 import re
+import requests
 from datetime import datetime, timezone
 import instaloader
 from dotenv import load_dotenv
@@ -16,6 +17,7 @@ load_dotenv()
 HISTORY_FILE = "sent_history.json"
 SETTINGS_FILE = "settings.json"
 QUEUE_FILE = "queue.json"
+QUEUE_IMAGES_DIR = "queue_images"
 DEFAULT_USER = "pixell.poet"
 
 
@@ -53,7 +55,7 @@ def format_date_from_caption(acc_caption: str) -> str:
     return acc_caption
 
 
-def scrape_polaris_timeline(username: str, max_items: int = 15):
+def scrape_polaris_timeline(username: str, max_items: int = 35):
     """
     Extracts posts from Instagram's polaris_ordered_timeline_connection without
     per-post metadata queries, avoiding rate-limiting while getting fresh CDN URLs.
@@ -75,9 +77,9 @@ def scrape_polaris_timeline(username: str, max_items: int = 15):
     edges = list(timeline.get("edges", []))
     page_info = timeline.get("page_info", {})
 
-    # Paginate once or twice to collect enough candidate posts
+    # Paginate to collect enough candidate posts
     pages_fetched = 1
-    while page_info.get("has_next_page") and len(edges) < 40 and pages_fetched < 4:
+    while page_info.get("has_next_page") and len(edges) < 60 and pages_fetched < 5:
         end_cursor = page_info.get("end_cursor")
         if not end_cursor:
             break
@@ -113,6 +115,8 @@ def sync():
     custom_captions = load_custom_captions()
     username = os.environ.get("INSTAGRAM_USERNAME", DEFAULT_USER)
 
+    os.makedirs(QUEUE_IMAGES_DIR, exist_ok=True)
+
     print(f"[INFO] Scanning timeline for @{username}...")
     try:
         edges = scrape_polaris_timeline(username)
@@ -122,6 +126,8 @@ def sync():
         return
 
     queue = []
+    headers = {"User-Agent": "Mozilla/5.0"}
+
     for edge in edges:
         node = edge.get("node", {})
         code = node.get("code")
@@ -140,19 +146,31 @@ def sync():
         if not display_uri:
             continue
 
+        # Download and cache image locally in queue_images/ to guarantee zero CDN expiry
+        img_rel_path = f"{QUEUE_IMAGES_DIR}/{code}.jpg"
+        if not os.path.exists(img_rel_path) or os.path.getsize(img_rel_path) == 0:
+            try:
+                r = requests.get(display_uri, headers=headers, timeout=20)
+                if r.status_code == 200:
+                    with open(img_rel_path, "wb") as img_f:
+                        img_f.write(r.content)
+            except Exception as dl_err:
+                print(f"[WARN] Could not cache image locally for {code}: {dl_err}")
+
         date_str = format_date_from_caption(node.get("accessibility_caption", ""))
         caption = custom_captions.get(code, "")
 
         queue.append({
             "shortcode": code,
             "date_utc": date_str or "Recent Post",
+            "local_image": img_rel_path if os.path.exists(img_rel_path) else None,
             "image_url": display_uri,
             "instagram_url": f"https://www.instagram.com/p/{code}/",
             "custom_caption": caption,
             "is_next": len(queue) == 0,
         })
 
-        if len(queue) >= 15:
+        if len(queue) >= 30:
             break
 
     if queue:
@@ -162,7 +180,7 @@ def sync():
                 "queue": queue
             }, f, indent=2, ensure_ascii=False)
 
-        print(f"[SUCCESS] Wrote {len(queue)} fresh single-photo items to {QUEUE_FILE}.")
+        print(f"[SUCCESS] Wrote {len(queue)} cached single-photo items to {QUEUE_FILE}.")
         print(f"[NEXT CANDIDATE] {queue[0]['shortcode']} ({queue[0]['date_utc']})")
     else:
         print("[WARN] No unsent single photos found to add to queue.")
