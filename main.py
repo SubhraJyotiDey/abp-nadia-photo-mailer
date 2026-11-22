@@ -320,24 +320,30 @@ def main():
         except Exception as e:
             print(f"[WARN] Failed to load forced post via Instaloader: {e}")
     else:
-        # 1. Try live Instagram scraping first
+        # 1. Try live Instagram scraping first (Polaris timeline)
         try:
-            print(f"[INFO] Fetching profile information for @{target_username}...")
-            profile = instaloader.Profile.from_username(L.context, target_username)
-            count = 0
-            for post in profile.get_posts():
-                count += 1
-                if count > args.max_scan:
+            print(f"[INFO] Fetching profile information for @{target_username} via Polaris...")
+            page = L.context.get_page_data(f"{target_username}/")
+            user = next((d["xig_user_by_username"] for d in page if "polaris_ordered_timeline_connection" in (d.get("xig_user_by_username") or {})), None)
+            if user:
+                edges = user.get("polaris_ordered_timeline_connection", {}).get("edges", [])
+                for edge in edges:
+                    node = edge.get("node", {})
+                    code = node.get("code")
+                    if not code or code in sent_shortcodes:
+                        continue
+                    media_type = node.get("media_type")
+                    typename = node.get("__typename")
+                    if media_type != 1 or typename != "XIGPolarisImageMedia" or node.get("carousel_media_count"):
+                        continue
+                    display_uri = node.get("display_uri")
+                    if not display_uri:
+                        continue
+                    target_shortcode = code
+                    target_image_url = display_uri
+                    target_date_str = node.get("accessibility_caption", "")
+                    print(f"[MATCH] Found next unsent single photo from live Instagram: {target_shortcode}")
                     break
-                if post.shortcode in sent_shortcodes:
-                    continue
-                if post.is_video or post.typename != "GraphImage":
-                    continue
-                target_shortcode = post.shortcode
-                target_image_url = post.url
-                target_date_str = post.date_utc.isoformat()
-                print(f"[MATCH] Found next unsent single photo from Instagram: {target_shortcode}")
-                break
         except Exception as e:
             print(f"[WARN] Live Instagram scrape failed ({e}). Falling back to repository queue.json...")
 

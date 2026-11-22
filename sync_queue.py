@@ -1,18 +1,14 @@
 """
 Generates queue.json for GitHub Pages static dashboard.
-Scans @pixell.poet, checks sent_history.json, and produces queue.json.
-
-Uses two strategies:
-1. Full profile scrape via Instaloader (gets fresh CDN URLs, but may be blocked)
-2. Lightweight edge-based scrape (uses profile edge data with display_url,
-   avoids per-post metadata fetches that trigger rate limits)
+Scans @pixell.poet using Instagram's Polaris web client timeline,
+checks sent_history.json, and produces a fresh queue.json with valid CDN URLs.
 """
 
 import os
 import json
-import requests
-import instaloader
+import re
 from datetime import datetime, timezone
+import instaloader
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -47,96 +43,69 @@ def load_custom_captions():
     return {}
 
 
-def strategy_full_scrape(L, username, sent_keys, custom_captions):
+def format_date_from_caption(acc_caption: str) -> str:
+    """Extract human-readable date from accessibility caption like 'Photo by Pixel Poet on December 07, 2025.'"""
+    if not acc_caption:
+        return ""
+    m = re.search(r"on\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})", acc_caption)
+    if m:
+        return m.group(1)
+    return acc_caption
+
+
+def scrape_polaris_timeline(username: str, max_items: int = 15):
     """
-    Strategy 1: Full Instaloader profile scrape.
-    Gets the highest quality URLs but each post triggers a metadata fetch.
+    Extracts posts from Instagram's polaris_ordered_timeline_connection without
+    per-post metadata queries, avoiding rate-limiting while getting fresh CDN URLs.
     """
-    print(f"[INFO] Strategy 1: Full profile scrape for @{username}...")
-    profile = instaloader.Profile.from_username(L.context, username)
-
-    queue = []
-    count = 0
-    for post in profile.get_posts():
-        count += 1
-        if count > 100:
-            break
-        if post.shortcode in sent_keys:
-            continue
-        if post.is_video or post.typename != "GraphImage":
-            continue
-
-        caption = custom_captions.get(post.shortcode, "")
-        queue.append({
-            "shortcode": post.shortcode,
-            "date_utc": post.date_utc.strftime("%d %b %Y, %I:%M %p"),
-            "image_url": post.url,
-            "instagram_url": f"https://www.instagram.com/p/{post.shortcode}/",
-            "custom_caption": caption,
-            "is_next": len(queue) == 0
-        })
-
-        if len(queue) >= 15:
-            break
-
-    return queue
-
-
-def strategy_graphql_edge(username, sent_keys, custom_captions):
-    """
-    Strategy 2: Use Instagram's public GraphQL endpoint to get the profile edge data.
-    This returns display_url for each post without needing per-post metadata fetches.
-    Less likely to be rate-limited.
-    """
-    print(f"[INFO] Strategy 2: GraphQL edge scrape for @{username}...")
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-        "X-IG-App-ID": "936619743392459",
-    }
-
-    # Get user ID first
-    resp = requests.get(
-        f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}",
-        headers=headers,
-        timeout=15
+    L = instaloader.Instaloader(
+        download_pictures=False,
+        download_videos=False,
+        download_video_thumbnails=False,
+        save_metadata=False,
     )
-    resp.raise_for_status()
-    data = resp.json()
 
-    user = data.get("data", {}).get("user", {})
-    edges = user.get("edge_owner_to_timeline_media", {}).get("edges", [])
+    page = L.context.get_page_data(f"{username}/")
+    user = next((d["xig_user_by_username"] for d in page if "polaris_ordered_timeline_connection" in (d.get("xig_user_by_username") or {})), None)
+    if not user:
+        raise ValueError(f"Could not find polaris_ordered_timeline_connection for {username}")
 
-    queue = []
-    for edge in edges:
-        node = edge.get("node", {})
-        shortcode = node.get("shortcode", "")
-        if shortcode in sent_keys:
-            continue
-        typename = node.get("__typename", "")
-        is_video = node.get("is_video", False)
-        if is_video or typename != "GraphImage":
-            continue
+    user_id = user.get("id")
+    timeline = user.get("polaris_ordered_timeline_connection", {})
+    edges = list(timeline.get("edges", []))
+    page_info = timeline.get("page_info", {})
 
-        display_url = node.get("display_url", "")
-        timestamp = node.get("taken_at_timestamp", 0)
-        date_str = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%d %b %Y, %I:%M %p") if timestamp else ""
-
-        caption = custom_captions.get(shortcode, "")
-        queue.append({
-            "shortcode": shortcode,
-            "date_utc": date_str,
-            "image_url": display_url,
-            "instagram_url": f"https://www.instagram.com/p/{shortcode}/",
-            "custom_caption": caption,
-            "is_next": len(queue) == 0
-        })
-
-        if len(queue) >= 15:
+    # Paginate once or twice to collect enough candidate posts
+    pages_fetched = 1
+    while page_info.get("has_next_page") and len(edges) < 40 and pages_fetched < 4:
+        end_cursor = page_info.get("end_cursor")
+        if not end_cursor:
+            break
+        try:
+            resp = L.context.doc_id_graphql_query(
+                "28904005159232689",
+                {
+                    "id": user_id,
+                    "after": end_cursor,
+                    "first": 12,
+                    "__relay_internal__pv__PolarisSEOIsCrawlerrelayprovider": False,
+                },
+                web_api=True,
+            )
+            conn = (resp.get("data") or {}).get("node", {}).get("polaris_ordered_timeline_connection")
+            if not conn:
+                break
+            new_edges = conn.get("edges", [])
+            if not new_edges:
+                break
+            edges.extend(new_edges)
+            page_info = conn.get("page_info", {})
+            pages_fetched += 1
+        except Exception as p_err:
+            print(f"[WARN] Pagination error on page {pages_fetched + 1}: {p_err}")
             break
 
-    return queue
+    return edges
 
 
 def sync():
@@ -144,41 +113,59 @@ def sync():
     custom_captions = load_custom_captions()
     username = os.environ.get("INSTAGRAM_USERNAME", DEFAULT_USER)
 
-    L = instaloader.Instaloader(
-        download_pictures=False,
-        download_videos=False,
-        download_video_thumbnails=False,
-        save_metadata=False
-    )
-
-    queue = None
-
-    # Try Strategy 1: Full Instaloader scrape
+    print(f"[INFO] Scanning timeline for @{username}...")
     try:
-        queue = strategy_full_scrape(L, username, sent_keys, custom_captions)
-        if queue:
-            print(f"[SUCCESS] Strategy 1 succeeded with {len(queue)} items.")
+        edges = scrape_polaris_timeline(username)
+        print(f"[INFO] Retrieved {len(edges)} total timeline items.")
     except Exception as e:
-        print(f"[WARN] Strategy 1 failed: {e}")
+        print(f"[ERROR] Failed to fetch timeline for @{username}: {e}")
+        return
 
-    # Try Strategy 2: GraphQL edge if Strategy 1 failed
-    if not queue:
-        try:
-            queue = strategy_graphql_edge(username, sent_keys, custom_captions)
-            if queue:
-                print(f"[SUCCESS] Strategy 2 succeeded with {len(queue)} items.")
-        except Exception as e:
-            print(f"[WARN] Strategy 2 also failed: {e}")
+    queue = []
+    for edge in edges:
+        node = edge.get("node", {})
+        code = node.get("code")
+        if not code or code in sent_keys:
+            continue
 
-    # Write results
+        media_type = node.get("media_type")
+        typename = node.get("__typename")
+
+        # STRICT FILTER: Single image only
+        # media_type 1 is Photo; 2 is Video/Reel; 8 is Carousel
+        if media_type != 1 or typename != "XIGPolarisImageMedia" or node.get("carousel_media_count"):
+            continue
+
+        display_uri = node.get("display_uri")
+        if not display_uri:
+            continue
+
+        date_str = format_date_from_caption(node.get("accessibility_caption", ""))
+        caption = custom_captions.get(code, "")
+
+        queue.append({
+            "shortcode": code,
+            "date_utc": date_str or "Recent Post",
+            "image_url": display_uri,
+            "instagram_url": f"https://www.instagram.com/p/{code}/",
+            "custom_caption": caption,
+            "is_next": len(queue) == 0,
+        })
+
+        if len(queue) >= 15:
+            break
+
     if queue:
         with open(QUEUE_FILE, "w", encoding="utf-8") as f:
-            json.dump({"last_synced": datetime.now(timezone.utc).isoformat(), "queue": queue}, f, indent=2, ensure_ascii=False)
-        print(f"[SUCCESS] Wrote {len(queue)} items to {QUEUE_FILE}.")
-        if queue:
-            print(f"[NEXT CANDIDATE] {queue[0]['shortcode']} ({queue[0]['date_utc']})")
+            json.dump({
+                "last_synced": datetime.now(timezone.utc).isoformat(),
+                "queue": queue
+            }, f, indent=2, ensure_ascii=False)
+
+        print(f"[SUCCESS] Wrote {len(queue)} fresh single-photo items to {QUEUE_FILE}.")
+        print(f"[NEXT CANDIDATE] {queue[0]['shortcode']} ({queue[0]['date_utc']})")
     else:
-        print(f"[WARN] sync_queue: All strategies failed. queue.json not updated.")
+        print("[WARN] No unsent single photos found to add to queue.")
 
 
 if __name__ == "__main__":
