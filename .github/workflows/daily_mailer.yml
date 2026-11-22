@@ -42,6 +42,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Refresh Queue (pre-send)
+        env:
+          INSTAGRAM_USERNAME: ${{ vars.INSTAGRAM_USERNAME || 'pixell.poet' }}
+        run: |
+          echo "Refreshing queue.json with fresh CDN URLs..."
+          python sync_queue.py || echo "Queue refresh failed (expected on cloud). Using existing queue.json."
+
       - name: Run Daily Photo Mailer
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -62,18 +69,17 @@ jobs:
           fi
 
           python main.py $CMD_ARGS
-          python sync_queue.py || true
 
       - name: Commit and Push Updated History & Queue
-        if: success() && inputs.dry_run != true
+        if: always()
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add sent_history.json queue.json
+          git add sent_history.json queue.json settings.json
           if ! git diff --staged --quiet; then
-            git commit -m "chore: record sent photo [skip ci]"
+            git commit -m "chore: update queue and history [skip ci]"
             git push
-            echo "Successfully pushed updated sent_history.json to repository."
+            echo "Successfully pushed updates to repository."
           else
-            echo "No changes to sent_history.json."
+            echo "No changes to commit."
           fi

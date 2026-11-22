@@ -342,6 +342,7 @@ def main():
             print(f"[WARN] Live Instagram scrape failed ({e}). Falling back to repository queue.json...")
 
     # 2. Resilient fallback to queue.json if live scrape was blocked by Instagram
+    queue_candidates = []
     if not target_shortcode and os.path.exists("queue.json"):
         try:
             with open("queue.json", "r", encoding="utf-8") as f:
@@ -350,27 +351,67 @@ def main():
                 sc = item.get("shortcode")
                 if sc in sent_shortcodes:
                     continue
-                target_shortcode = sc
-                target_image_url = item.get("image_url")
-                target_date_str = item.get("date_utc")
-                print(f"[MATCH] Selected next unsent photo from queue.json: {target_shortcode}")
-                break
+                queue_candidates.append(item)
         except Exception as q_err:
             print(f"[ERROR] Failed to read queue.json: {q_err}")
+
+        for item in queue_candidates:
+            target_shortcode = item.get("shortcode")
+            target_image_url = item.get("image_url")
+            target_date_str = item.get("date_utc")
+            print(f"[MATCH] Selected next unsent photo from queue.json: {target_shortcode}")
+            break
 
     if not target_shortcode or not target_image_url:
         print("[INFO] No new unsent single photo found to send. Exiting.")
         return
 
-    # Download image bytes directly from target_image_url
-    print(f"[INFO] Downloading image from CDN for {target_shortcode}...")
+    # Download image bytes directly from target_image_url, with fallback through queue candidates
+    raw_image_bytes = None
     headers = {"User-Agent": "Mozilla/5.0"}
+
+    # Try the primary target first
+    print(f"[INFO] Downloading image from CDN for {target_shortcode}...")
     try:
         resp = requests.get(target_image_url, headers=headers, timeout=30)
         resp.raise_for_status()
         raw_image_bytes = resp.content
     except Exception as e:
-        sys.exit(f"[FATAL] Failed to download image for post {target_shortcode}: {e}")
+        print(f"[WARN] CDN URL expired/failed for {target_shortcode}: {e}")
+
+        # Try remaining queue candidates if the CDN URL has expired
+        for item in queue_candidates[1:] if queue_candidates else []:
+            sc = item.get("shortcode")
+            url = item.get("image_url")
+            print(f"[INFO] Trying next queue candidate: {sc}...")
+            try:
+                resp = requests.get(url, headers=headers, timeout=30)
+                resp.raise_for_status()
+                raw_image_bytes = resp.content
+                target_shortcode = sc
+                target_image_url = url
+                target_date_str = item.get("date_utc")
+                print(f"[MATCH] Successfully downloaded image for fallback candidate: {sc}")
+                break
+            except Exception as e2:
+                print(f"[WARN] CDN URL also expired for {sc}: {e2}")
+                continue
+
+        # Last resort: try fetching fresh URL via Instaloader for the target post
+        if raw_image_bytes is None:
+            print(f"[INFO] All queue CDN URLs expired. Attempting fresh URL fetch via Instaloader for {target_shortcode}...")
+            try:
+                fresh_post = instaloader.Post.from_shortcode(L.context, target_shortcode)
+                fresh_url = fresh_post.url
+                resp = requests.get(fresh_url, headers=headers, timeout=30)
+                resp.raise_for_status()
+                raw_image_bytes = resp.content
+                print(f"[SUCCESS] Fetched fresh CDN URL for {target_shortcode}")
+            except Exception as e3:
+                print(f"[WARN] Instaloader fresh fetch also failed: {e3}")
+
+    if raw_image_bytes is None:
+        sys.exit(f"[FATAL] Failed to download image for any candidate. All CDN URLs are expired and Instaloader is blocked. Please run sync_queue.py locally to refresh queue.json.")
 
     # Convert to standard JPEG format
     jpeg_bytes = prepare_jpeg_attachment(raw_image_bytes)
